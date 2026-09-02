@@ -1,0 +1,15 @@
+# Python
+ocr_service/venv/
+__pycache__/
+*.pyc
+
+# Node (for later, when server/client exist)
+node_modules/
+
+# env files
+.env
+
+# OS/editor junk
+.DS_Store
+.vscode/
+*.log
