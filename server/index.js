@@ -5,6 +5,7 @@ const FormData = require('form-data');
 const cors = require('cors');
 const { classifyDeclaration } = require('./classify');
 const { estimateFontHeightMM } = require('./fontsize');
+const { propagateRowClassification } = require('./rowGrouping');
 require('dotenv').config();
 
 const app = express();
@@ -45,8 +46,10 @@ app.post('/api/scan', upload.single('image'), async (req, res) => {
       };
     });
 
-    res.json({ text_blocks: enrichedBlocks });
-    
+    const finalBlocks = propagateRowClassification(enrichedBlocks);
+
+    res.json({ text_blocks: finalBlocks });
+
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: 'OCR service unreachable', detail: err.message });
