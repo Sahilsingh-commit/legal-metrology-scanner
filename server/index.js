@@ -3,6 +3,8 @@ const multer = require('multer');
 const axios = require('axios');
 const FormData = require('form-data');
 const cors = require('cors');
+const { classifyDeclaration } = require('./classify');
+const { estimateFontHeightMM } = require('./fontsize');
 require('dotenv').config();
 
 const app = express();
@@ -25,7 +27,26 @@ app.post('/api/scan', upload.single('image'), async (req, res) => {
       { headers: form.getHeaders() }
     );
 
-    res.json(ocrResponse.data);
+        const rawBlocks = ocrResponse.data.text_blocks;
+
+    // We need the image height in pixels for font-size math — get it from the uploaded image
+    const sharp = require('sharp');
+    const metadata = await sharp(req.file.buffer).metadata();
+    const imageHeightPx = metadata.height;
+
+    const enrichedBlocks = rawBlocks.map((block) => {
+      const classification = classifyDeclaration(block.text);
+      const fontHeightMM = estimateFontHeightMM(block.bbox, imageHeightPx);
+      return {
+        ...block,
+        matched_declaration_hint: classification.category,
+        match_confidence: classification.confidence,
+        font_height_mm_est: fontHeightMM,
+      };
+    });
+
+    res.json({ text_blocks: enrichedBlocks });
+    
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: 'OCR service unreachable', detail: err.message });
