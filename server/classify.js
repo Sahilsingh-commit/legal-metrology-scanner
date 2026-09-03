@@ -6,21 +6,26 @@ const OCR_FIXES = [
   [/\bN0\b/gi, 'No'],
 ];
 
-// Short, generic tokens — matched as EXACT WHOLE WORDS only (regex), never fuzzy
+// Any keyword this short or shorter is matched as an EXACT substring/word only.
+// Fuzzy partial_ratio on very short strings gives unreliable false-positive matches.
+const SHORT_KEYWORD_MAX_LENGTH = 5;
+
 const UNIT_KEYWORDS = {
   net_quantity: ['g', 'kg', 'ml', 'l', 'gm', 'gms'],
 };
 
-// Longer, distinctive phrases — safe to fuzzy match
 const PHRASE_KEYWORDS = {
   net_quantity: ['net wt', 'net weight', 'net qty', 'net quantity'],
   mrp: ['mrp', 'rs.', 'inclusive of all taxes', 'inclusiveofalltaxes', 'incl of all taxes', 'maximum retail price', 'max retail price'],
-  mfg_date: ['mfg date', 'manufactured', 'pkd', 'packed on', 'date of manufacture', 'mfd'],
-  manufacturer_address: ['mfd by', 'manufactured by', 'marketed by', 'packed by'],
-  consumer_care: ['consumer care', 'customer care', 'helpline', 'contact us'],
+  mfg_date: ['mfg date', 'manufactured on', 'pkd', 'packed on', 'date of manufacture', 'mfd:', 'month & year of manufactur'],
+  manufacturer_address: ['manufactured by', 'manufactured & marketed by', 'marketed by', 'packed by', 'mfd by', 'address'],
+  consumer_care: ['consumer care', 'customer care', 'helpline', 'contact us', 'for consumer complaints', 'toll-free', 'toll free'],
   country_of_origin: ['country of origin', 'made in', 'product of'],
-  batch_no: ['batch no', 'b.no', 'batch number'],
-  expiry_date: ['expiry date', 'exp date', 'use before', 'best before'],
+  batch_no: ['batch no', 'lot no', 'b.no'],
+  expiry_date: ['expiry date', 'exp date', 'use before', 'best before', 'use by'],
+  generic_name: ['generic name', 'common name'],
+  product_name: ['item name', 'product name', 'brand name'],
+  item_code: ['item code', 'model no', 'model number', 'sku'],
 };
 
 function normalizeText(text) {
@@ -31,25 +36,36 @@ function normalizeText(text) {
   return cleaned.toLowerCase();
 }
 
+function scoreKeywordMatch(keyword, normalizedText) {
+  if (keyword.length <= SHORT_KEYWORD_MAX_LENGTH) {
+    // exact word-boundary match only — no fuzziness for short/risky keywords
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\b${escaped}\\b`, 'i');
+    return regex.test(normalizedText) ? 100 : 0;
+  }
+  return fuzz.partial_ratio(keyword, normalizedText);
+}
+
 function classifyDeclaration(text) {
   const normalized = normalizeText(text);
   let bestCategory = 'unclassified';
   let bestScore = 0;
 
-  // 1. Check exact whole-word unit matches first (highest trust, no fuzziness)
+  // 1. Exact whole-word unit matches (highest trust)
   for (const [category, units] of Object.entries(UNIT_KEYWORDS)) {
     for (const unit of units) {
-      const wordBoundaryRegex = new RegExp(`\\b${unit}\\b`, 'i');
-      if (wordBoundaryRegex.test(normalized)) {
+      const escaped = unit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`\\b${escaped}\\b`, 'i');
+      if (regex.test(normalized)) {
         return { category, confidence: 100 };
       }
     }
   }
 
-  // 2. Fuzzy match longer phrases
+  // 2. Phrase matching — short phrases exact, longer phrases fuzzy
   for (const [category, keywords] of Object.entries(PHRASE_KEYWORDS)) {
     for (const keyword of keywords) {
-      const score = fuzz.partial_ratio(keyword, normalized);
+      const score = scoreKeywordMatch(keyword, normalized);
       if (score > bestScore) {
         bestScore = score;
         bestCategory = category;
@@ -57,7 +73,8 @@ function classifyDeclaration(text) {
     }
   }
 
-  if (bestScore < 75) {
+  // Raised threshold from 75 to 85 — reduces false positives on borderline fuzzy matches
+  if (bestScore < 85) {
     return { category: 'unclassified', confidence: bestScore };
   }
   return { category: bestCategory, confidence: bestScore };
