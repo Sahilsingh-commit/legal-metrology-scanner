@@ -17,7 +17,7 @@ const UNIT_KEYWORDS = {
 const PHRASE_KEYWORDS = {
   net_quantity: ['net wt', 'net weight', 'net qty', 'net quantity'],
   mrp: ['mrp', 'rs.', 'inclusive of all taxes', 'inclusiveofalltaxes', 'incl of all taxes', 'maximum retail price', 'max retail price'],
-  mfg_date: ['mfg date', 'manufactured on', 'pkd', 'packed on', 'date of manufacture', 'mfd:', 'month & year of manufactur'],
+  mfg_date: ['mfg date', 'manufactured on', 'pkd', 'packed on', 'date of manufacture', 'mfd', 'month & year of manufactur'],
   manufacturer_address: ['manufactured by', 'manufactured & marketed by', 'marketed by', 'packed by', 'mfd by', 'address'],
   consumer_care: ['consumer care', 'customer care', 'helpline', 'contact us', 'for consumer complaints', 'toll-free', 'toll free'],
   country_of_origin: ['country of origin', 'made in', 'product of'],

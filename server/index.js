@@ -6,6 +6,8 @@ const cors = require('cors');
 const { classifyDeclaration } = require('./classify');
 const { estimateFontHeightMM } = require('./fontsize');
 const { propagateRowClassification } = require('./rowGrouping');
+const { checkCompliance } = require('./rulesEngine');
+const sharp = require('sharp');
 require('dotenv').config();
 
 const app = express();
@@ -13,43 +15,81 @@ app.use(cors());
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-app.post('/api/scan', upload.single('image'), async (req, res) => {
+app.post('/api/scan', upload.array('images', 5), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No image file uploaded' });
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No image files uploaded' });
     }
 
-    const form = new FormData();
-    form.append('file', req.file.buffer, req.file.originalname);
+    const complianceOpts = {
+      isImported: req.body.isImported === 'true',
+      isPerishable: req.body.isPerishable !== 'false',
+      isSizeRelevant: req.body.isSizeRelevant === 'true',
+      pdpAreaCm2: req.body.pdpAreaCm2 ? parseFloat(req.body.pdpAreaCm2) : null,
+      assumedCaptureWidthCm: 10,
+    };
 
-    const ocrResponse = await axios.post(
-      `${process.env.OCR_SERVICE_URL}/extract`,
-      form,
-      { headers: form.getHeaders() }
-    );
+    const allImageBlocks = []; // will hold arrays of blocks, one array per image
 
-        const rawBlocks = ocrResponse.data.text_blocks;
+            for (const file of req.files) {
+      const resizedBuffer = await sharp(file.buffer)
+        .resize({ width: 1600, withoutEnlargement: true })
+        .toBuffer();
 
-    // We need the image height in pixels for font-size math — get it from the uploaded image
-    const sharp = require('sharp');
-    const metadata = await sharp(req.file.buffer).metadata();
-    const imageHeightPx = metadata.height;
+      const form = new FormData();
+      form.append('file', resizedBuffer, file.originalname);
 
-    const enrichedBlocks = rawBlocks.map((block) => {
-      const classification = classifyDeclaration(block.text);
-      const fontHeightMM = estimateFontHeightMM(block.bbox, imageHeightPx);
-      return {
-        ...block,
-        matched_declaration_hint: classification.category,
-        match_confidence: classification.confidence,
-        font_height_mm_est: fontHeightMM,
-      };
+      const ocrResponse = await axios.post(
+        `${process.env.OCR_SERVICE_URL}/extract`,
+        form,
+        { headers: form.getHeaders() }
+      );
+
+      const rawBlocks = ocrResponse.data.text_blocks;
+
+      const metadata = await sharp(resizedBuffer).metadata();
+      const imageHeightPx = metadata.height;
+
+      const enrichedBlocks = rawBlocks.map((block) => {
+        const classification = classifyDeclaration(block.text);
+        const fontHeightMM = estimateFontHeightMM(block.bbox, imageHeightPx);
+        return {
+          ...block,
+          matched_declaration_hint: classification.category,
+          match_confidence: classification.confidence,
+          font_height_mm_est: fontHeightMM,
+        };
+      });
+
+      // Row-grouping happens PER IMAGE — a value should only inherit a
+      // category from a label on the SAME physical panel, not a different one.
+      const rowGroupedBlocks = propagateRowClassification(enrichedBlocks);
+
+      allImageBlocks.push({
+        filename: file.originalname,
+        blocks: rowGroupedBlocks,
+      });
+    }
+
+    // Merge blocks from all images into one flat list for the rules engine —
+    // the rules engine doesn't care which physical panel a declaration came
+    // from, only whether it exists SOMEWHERE on the product.
+    const mergedBlocks = allImageBlocks.flatMap((img) => img.blocks);
+
+    const rulesEngineBlocks = mergedBlocks.map((b) => ({
+      text: b.text,
+      category: b.matched_declaration_hint,
+      confidence: b.match_confidence,
+      fontHeightMm: b.font_height_mm_est,
+      bbox: b.bbox,
+    }));
+
+    const compliance = checkCompliance(rulesEngineBlocks, complianceOpts);
+
+    res.json({
+      images: allImageBlocks, // per-image breakdown, useful for showing which panel had what
+      compliance,
     });
-
-    const finalBlocks = propagateRowClassification(enrichedBlocks);
-
-    res.json({ text_blocks: finalBlocks });
-
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: 'OCR service unreachable', detail: err.message });
