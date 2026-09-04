@@ -11,7 +11,7 @@ const OCR_FIXES = [
 const SHORT_KEYWORD_MAX_LENGTH = 5;
 
 const UNIT_KEYWORDS = {
-  net_quantity: ['g', 'kg', 'ml', 'l', 'gm', 'gms'],
+  net_quantity: ['g', 'kg', 'ml', 'l', 'gm', 'gms', 'tablet', 'tablets', 'capsule', 'capsules', 'tab', 'tabs'],
 };
 
 const PHRASE_KEYWORDS = {
@@ -23,7 +23,7 @@ const PHRASE_KEYWORDS = {
   country_of_origin: ['country of origin', 'made in', 'product of'],
   batch_no: ['batch no', 'lot no', 'b.no'],
   expiry_date: ['expiry date', 'exp date', 'use before', 'best before', 'use by'],
-  generic_name: ['generic name', 'common name'],
+  generic_name: ['generic name', 'common name', 'composition', 'each tablet contains', 'each uncoated tablet contains', 'each capsule contains'],
   product_name: ['item name', 'product name', 'brand name'],
   item_code: ['item code', 'model no', 'model number', 'sku'],
 };
@@ -52,11 +52,14 @@ function classifyDeclaration(text) {
   let bestScore = 0;
 
   // 1. Exact whole-word unit matches (highest trust)
+    // 1. Check unit matches — require a digit immediately before the unit,
+  // since real quantities are always "500g"/"250 ml", never a bare letter.
+  // This avoids false positives like "K.G. Marg" (a street name) matching "g".
   for (const [category, units] of Object.entries(UNIT_KEYWORDS)) {
     for (const unit of units) {
       const escaped = unit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`\\b${escaped}\\b`, 'i');
-      if (regex.test(normalized)) {
+      const digitPrefixedRegex = new RegExp(`\\d+\\s*${escaped}\\b`, 'i');
+      if (digitPrefixedRegex.test(normalized)) {
         return { category, confidence: 100 };
       }
     }

@@ -87,3 +87,28 @@ panel.
 include multiple photos of the same product, merged into one combined
 compliance report. Users should be encouraged to photograph all
 relevant panels for an accurate result.
+
+## 6. Multi-image scan time scales with declaration density, not just file size
+
+**Issue:** OCR processing time is dominated by the number of distinct
+text regions PaddleOCR must recognize, not primarily by image
+resolution. A product with a dense composition/ingredients panel can
+take 50-90 seconds to process, compared to 10-15 seconds for a simple
+front-panel MRP/date photo.
+
+**Root cause:** confirmed via direct timing — recognition runs once
+per detected text region, so a paragraph-heavy panel with 20-30 text
+blocks genuinely costs proportionally more compute than a sparse
+label with 6-7 blocks, independent of image dimensions.
+
+**Mitigation in place:** images are resized to a max width before OCR
+(reduces detection-pass cost) and multiple uploaded images are
+processed concurrently via `Promise.all` rather than sequentially
+(confirmed via testing to meaningfully reduce total wait time, since
+some overlap benefit exists even though the underlying OCR engine
+serializes individual recognition calls internally).
+
+**Planned fix:** running multiple OCR worker processes (true
+parallelism) would further reduce this, but requires infrastructure
+beyond the current single-process deployment — a reasonable
+production upgrade, out of scope for the current build.

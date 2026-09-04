@@ -1,5 +1,5 @@
 from paddleocr import PaddleOCR
-
+## to run ocr service run code venv\Scripts\activate uvicorn main:app --reload --port 8000
 ocr = PaddleOCR(
     text_detection_model_name="PP-OCRv4_mobile_det",
     text_recognition_model_name="PP-OCRv4_mobile_rec",

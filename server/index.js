@@ -5,7 +5,7 @@ const FormData = require('form-data');
 const cors = require('cors');
 const { classifyDeclaration } = require('./classify');
 const { estimateFontHeightMM } = require('./fontsize');
-const { propagateRowClassification } = require('./rowGrouping');
+const { propagateRowClassification, propagateVerticalContinuation } = require('./rowGrouping');
 const { checkCompliance } = require('./rulesEngine');
 const sharp = require('sharp');
 require('dotenv').config();
@@ -29,47 +29,58 @@ app.post('/api/scan', upload.array('images', 5), async (req, res) => {
       assumedCaptureWidthCm: 10,
     };
 
-    const allImageBlocks = []; // will hold arrays of blocks, one array per image
+    // Process all uploaded images CONCURRENTLY instead of one-at-a-time —
+    // each image's OCR call, resize, and classification is independent of
+    // the others, so there's no need to wait for one to finish before
+    // starting the next.
+    const allImageBlocks = await Promise.all(
+      req.files.map(async (file) => {
+        const resizedBuffer = await sharp(file.buffer)
+          .resize({ width: 1200, withoutEnlargement: true })
+          .toBuffer();
 
-            for (const file of req.files) {
-      const resizedBuffer = await sharp(file.buffer)
-        .resize({ width: 1600, withoutEnlargement: true })
-        .toBuffer();
+        const form = new FormData();
+        form.append('file', resizedBuffer, file.originalname);
 
-      const form = new FormData();
-      form.append('file', resizedBuffer, file.originalname);
+        const ocrStart = Date.now();
+        const ocrResponse = await axios.post(
+          `${process.env.OCR_SERVICE_URL}/extract`,
+          form,
+          { headers: form.getHeaders() }
+        );
+        console.log(`OCR took ${Date.now() - ocrStart}ms for ${file.originalname}`);
 
-      const ocrResponse = await axios.post(
-        `${process.env.OCR_SERVICE_URL}/extract`,
-        form,
-        { headers: form.getHeaders() }
-      );
+        const rawBlocks = ocrResponse.data.text_blocks;
 
-      const rawBlocks = ocrResponse.data.text_blocks;
+        const metadata = await sharp(resizedBuffer).metadata();
+        const imageHeightPx = metadata.height;
 
-      const metadata = await sharp(resizedBuffer).metadata();
-      const imageHeightPx = metadata.height;
+        const enrichedBlocks = rawBlocks.map((block) => {
+          const classification = classifyDeclaration(block.text);
+          const fontHeightMM = estimateFontHeightMM(block.bbox, imageHeightPx);
+          return {
+            ...block,
+            matched_declaration_hint: classification.category,
+            match_confidence: classification.confidence,
+            font_height_mm_est: fontHeightMM,
+          };
+        });
 
-      const enrichedBlocks = rawBlocks.map((block) => {
-        const classification = classifyDeclaration(block.text);
-        const fontHeightMM = estimateFontHeightMM(block.bbox, imageHeightPx);
+        // Row-grouping happens PER IMAGE — a value should only inherit a
+        // category from a label on the SAME physical panel, not a different one.
+        const rowGroupedBlocks = propagateRowClassification(enrichedBlocks);
+
+        // Vertical continuation (multi-line addresses, composition lists, etc.)
+        // also runs PER IMAGE, right after row-grouping.
+        const finalBlocksForImage = propagateVerticalContinuation(rowGroupedBlocks);
+
         return {
-          ...block,
-          matched_declaration_hint: classification.category,
-          match_confidence: classification.confidence,
-          font_height_mm_est: fontHeightMM,
+          filename: file.originalname,
+          blocks: finalBlocksForImage, // <-- was rowGroupedBlocks before; now correctly
+                                        //     includes the vertical-continuation results
         };
-      });
-
-      // Row-grouping happens PER IMAGE — a value should only inherit a
-      // category from a label on the SAME physical panel, not a different one.
-      const rowGroupedBlocks = propagateRowClassification(enrichedBlocks);
-
-      allImageBlocks.push({
-        filename: file.originalname,
-        blocks: rowGroupedBlocks,
-      });
-    }
+      })
+    );
 
     // Merge blocks from all images into one flat list for the rules engine —
     // the rules engine doesn't care which physical panel a declaration came

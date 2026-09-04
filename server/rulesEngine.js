@@ -131,7 +131,7 @@ const DECLARATION_RULES = [
     required: () => true,
     validate: (text) => {
       // Must have a number AND a recognized unit (or be a plain count).
-      const unitMatch = /(\d+(\.\d+)?)\s*(g|kg|ml|l|gm|gms|kgs|mg|litre|litres|pieces?|pcs?)\b/i.test(text);
+            const unitMatch = /(\d+(\.\d+)?)\s*(g|kg|ml|l|gm|gms|kgs|mg|litre|litres|pieces?|pcs?|tablets?|capsules?|tabs?)\b/i.test(text);
       if (!unitMatch) {
         return { ok: false, reason: "No numeric value + recognized unit found" };
       }
@@ -147,25 +147,32 @@ const DECLARATION_RULES = [
     label: "Month & year of manufacture / packing / import",
     categories: ["mfg_date"],
     required: () => true,
-    validate: (text) => {
+    
+        validate: (text) => {
+      const hasFullDate =
+        /\b(0?[1-9]|[12]\d|3[01])[\/\-.](0?[1-9]|1[0-2])[\/\-.](\d{2,4})\b/.test(text);
       const hasMonthYear =
-        /\b(0?[1-9]|1[0-2])[\/\-.](\d{2,4})\b/.test(text) || // 03/2026
+        /\b(0?[1-9]|1[0-2])[\/\-.](\d{2,4})\b/.test(text) ||
         /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*'?\d{2,4}\b/i.test(text);
-      return hasMonthYear
+      return (hasFullDate || hasMonthYear)
         ? { ok: true }
-        : { ok: false, reason: "No recognizable month/year pattern found" };
+        : { ok: false, reason: "No recognizable expiry date pattern found" };
     },
   },
-  {
+    {
     ruleRef: "Rule 6(1)(da)",
     label: "Best before / use-by / expiry date",
     categories: ["expiry_date"],
-    required: (opts) => opts.isPerishable !== false, // default: assume required unless told otherwise
+    required: (opts) => opts.isPerishable !== false,
     validate: (text) => {
-      const hasDate =
-        /\b(0?[1-9]|[12]\d|3[01])[\/\-.](0?[1-9]|1[0-2])[\/\-.](\d{2,4})\b/.test(text) ||
+      const hasFullDate =
+        /\b(0?[1-9]|[12]\d|3[01])[\/\-.](0?[1-9]|1[0-2])[\/\-.](\d{2,4})\b/.test(text);
+      const hasMonthYear =
+        /\b(0?[1-9]|1[0-2])[\/\-.](\d{2,4})\b/.test(text) ||
         /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*'?\d{2,4}\b/i.test(text);
-      return hasDate ? { ok: true } : { ok: false, reason: "No recognizable expiry date pattern found" };
+      return (hasFullDate || hasMonthYear)
+        ? { ok: true }
+        : { ok: false, reason: "No recognizable expiry date pattern found" };
     },
   },
   {
@@ -173,10 +180,14 @@ const DECLARATION_RULES = [
     label: "Retail sale price (MRP, inclusive of all taxes)",
     categories: ["mrp"],
     required: () => true,
-    validate: (text) => {
-      const hasCurrency = /(rs\.?|inr|₹)\s*\d+(\.\d{1,2})?/i.test(text);
+        validate: (text) => {
+      const hasNumber = /\d+(\.\d{1,2})?/.test(text);
+      if (!hasNumber) {
+        return { ok: false, reason: "No numeric price value detected" };
+      }
+      const hasCurrency = /(rs\.?|inr|₹)/i.test(text);
       if (!hasCurrency) {
-        return { ok: false, reason: "No currency symbol/value detected" };
+        return { ok: "warn", reason: "Price value found but no currency symbol (₹/Rs.) detected — likely an OCR gap, verify manually" };
       }
       const hasInclOfTax = /(incl\.?|inclusive)\s*(of)?\s*(all)?\s*tax(es)?/i.test(text);
       if (!hasInclOfTax) {
@@ -267,9 +278,15 @@ function checkCompliance(blocks, opts = {}) {
       continue;
     }
 
-    // Use the highest-confidence match for content validation
-    const best = matches.sort((a, b) => (b.confidence || 0) - (a.confidence || 0))[0];
-    const validation = rule.validate(best.text || "");
+        // Sort by confidence to pick a representative "best" block for evidence display,
+    // but validate against ALL matched text combined — real labels split a declaration's
+    // label and value into separate blocks ("Mfg.Date" + "10/2025"), so validating only
+    // the single highest-confidence block can end up checking the wrong fragment when
+    // label and value share identical inherited confidence (a tie).
+    const sortedMatches = matches.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+    const best = sortedMatches[0];
+     const combinedText = sortedMatches.map((m) => m.text).filter(Boolean).join(' ');
+    const validation = rule.validate(combinedText);
 
     if (validation.ok === true) {
       results.push({
@@ -281,7 +298,7 @@ function checkCompliance(blocks, opts = {}) {
           best.confidence < 70
             ? `Present and well-formed, but OCR confidence is low (${best.confidence}%) — verify manually`
             : "Present and well-formed",
-        evidence: { text: best.text, confidence: best.confidence },
+        evidence: { text: combinedText, confidence: best.confidence },
       });
     } else if (validation.ok === "warn") {
       results.push({
@@ -290,7 +307,7 @@ function checkCompliance(blocks, opts = {}) {
         status: "WARNING",
         severity: "WARNING",
         message: validation.reason,
-        evidence: { text: best.text, confidence: best.confidence },
+        evidence: { text: combinedText, confidence: best.confidence },
       });
     } else {
       results.push({
@@ -299,7 +316,7 @@ function checkCompliance(blocks, opts = {}) {
         status: "MALFORMED",
         severity: "FORMAT",
         message: validation.reason,
-        evidence: { text: best.text, confidence: best.confidence },
+        evidence: { text: combinedText, confidence: best.confidence },
       });
     }
 

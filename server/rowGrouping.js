@@ -60,5 +60,61 @@ function propagateRowClassification(blocks) {
 
   return rows.flatMap((r) => r.blocks);
 }
+// Categories where a declaration is commonly split across several
+// vertically-stacked lines (a multi-line address, for example) rather
+// than a single label:value row.
+const MULTILINE_CATEGORIES = new Set(['manufacturer_address', 'consumer_care', 'generic_name']);
 
-module.exports = { propagateRowClassification };
+function horizontalOverlapFraction(bboxA, bboxB) {
+  const overlapStart = Math.max(bboxA[0], bboxB[0]);
+  const overlapEnd = Math.min(bboxA[2], bboxB[2]);
+  const overlap = Math.max(0, overlapEnd - overlapStart);
+  const smallerWidth = Math.min(bboxA[2] - bboxA[0], bboxB[2] - bboxB[0]);
+  if (smallerWidth === 0) return 0;
+  return overlap / smallerWidth;
+}
+
+// After row-grouping, walk top-to-bottom and let a confidently-classified
+// multiline-category label (e.g. "Marketed by:") absorb subsequent
+// unclassified lines directly beneath it, as long as they roughly line up
+// horizontally and aren't too far below — stops as soon as a new
+// classified block or a big gap appears.
+function propagateVerticalContinuation(blocks, opts = {}) {
+  const { maxGapPx = 60, xOverlapThreshold = 0.3 } = opts;
+  const sorted = [...blocks].sort((a, b) => a.bbox[1] - b.bbox[1]);
+
+  let active = null;
+
+  for (const block of sorted) {
+    const isFreshMultilineLabel =
+      MULTILINE_CATEGORIES.has(block.matched_declaration_hint) &&
+      !block.inferred_from_vertical_continuation;
+
+    if (isFreshMultilineLabel) {
+      active = { category: block.matched_declaration_hint, bbox: block.bbox, confidence: block.match_confidence };
+      continue;
+    }
+
+    if (active && block.matched_declaration_hint === 'unclassified') {
+      const verticalGap = block.bbox[1] - active.bbox[3];
+      const hOverlap = horizontalOverlapFraction(active.bbox, block.bbox);
+
+      if (verticalGap <= maxGapPx && hOverlap >= xOverlapThreshold) {
+        block.matched_declaration_hint = active.category;
+        block.match_confidence = Math.min(active.confidence, 70); // lower — this is inferred, not directly matched
+        block.inferred_from_vertical_continuation = true;
+        active.bbox = block.bbox; // extend the active region downward
+        continue;
+      }
+    }
+
+    // Any other classified block breaks the chain
+    if (block.matched_declaration_hint !== 'unclassified') {
+      active = null;
+    }
+  }
+
+  return blocks;
+}
+
+module.exports = { propagateRowClassification, propagateVerticalContinuation };
