@@ -112,3 +112,5 @@ serializes individual recognition calls internally).
 parallelism) would further reduce this, but requires infrastructure
 beyond the current single-process deployment — a reasonable
 production upgrade, out of scope for the current build.
+
+#7 in your known-limitations doc, something like: "Common/generic name detection currently relies on explicit label prefixes and does not infer unlabeled prominent title text as the product name — a reasonable scope boundary given the remaining timeline." This is honest and shows you understand the gap's real shape, without burning time on a heuristic that might not generalize well anyway.

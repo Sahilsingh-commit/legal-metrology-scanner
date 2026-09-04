@@ -170,7 +170,9 @@ const DECLARATION_RULES = [
       const hasMonthYear =
         /\b(0?[1-9]|1[0-2])[\/\-.](\d{2,4})\b/.test(text) ||
         /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*'?\d{2,4}\b/i.test(text);
-      return (hasFullDate || hasMonthYear)
+      const hasRelativeDuration =
+        /\d+\s*(days?|months?|years?)\s*(from)?/i.test(text);
+      return (hasFullDate || hasMonthYear || hasRelativeDuration)
         ? { ok: true }
         : { ok: false, reason: "No recognizable expiry date pattern found" };
     },
@@ -187,7 +189,7 @@ const DECLARATION_RULES = [
       }
       const hasCurrency = /(rs\.?|inr|₹)/i.test(text);
       if (!hasCurrency) {
-        return { ok: "warn", reason: "Price value found but no currency symbol (₹/Rs.) detected — likely an OCR gap, verify manually" };
+        return { ok: "warn", reason: "Price value found but no currency symbol (Rs./INR) detected — likely an OCR gap, verify manually" };
       }
       const hasInclOfTax = /(incl\.?|inclusive)\s*(of)?\s*(all)?\s*tax(es)?/i.test(text);
       if (!hasInclOfTax) {

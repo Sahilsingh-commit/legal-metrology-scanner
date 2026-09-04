@@ -144,6 +144,18 @@ body {
   padding: 1.5rem 2rem;
   background: white;
   margin-bottom: 2rem;
+  justify-content: space-between;
+}
+
+.pdf-button {
+  margin-left: auto;
+  background: white;
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  cursor: pointer;
 }
 
 .score-block {

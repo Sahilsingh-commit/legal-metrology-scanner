@@ -8,6 +8,7 @@ const { estimateFontHeightMM } = require('./fontsize');
 const { propagateRowClassification, propagateVerticalContinuation } = require('./rowGrouping');
 const { checkCompliance } = require('./rulesEngine');
 const sharp = require('sharp');
+const { generateReportPdf } = require('./generateReportPdf');
 require('dotenv').config();
 
 const app = express();
@@ -105,6 +106,18 @@ app.post('/api/scan', upload.array('images', 5), async (req, res) => {
     console.error(err.message);
     res.status(500).json({ error: 'OCR service unreachable', detail: err.message });
   }
+  app.post('/api/report/pdf', express.json({ limit: '5mb' }), (req, res) => {
+  try {
+    const { compliance, meta } = req.body;
+    if (!compliance) {
+      return res.status(400).json({ error: 'Missing compliance data' });
+    }
+    generateReportPdf(compliance, meta || {}, res);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: 'Failed to generate PDF', detail: err.message });
+  }
+});
 });
 
 app.get('/', (req, res) => {

@@ -24,10 +24,33 @@ function App() {
   e.target.value = ''; // reset so choosing the same file again still fires onChange
 };
 
+
 const removeFile = (index) => {
   const updatedFiles = files.filter((_, i) => i !== index);
   setFiles(updatedFiles);
   setPreviews(updatedFiles.map((f) => URL.createObjectURL(f)));
+};
+
+const handleDownloadPdf = async () => {
+  if (!data) return;
+  try {
+    const response = await axios.post(
+      'http://localhost:5000/api/report/pdf',
+      {
+        compliance: data.compliance,
+        meta: { scannedAt: new Date().toISOString(), imageCount: files.length },
+      },
+      { responseType: 'blob' }
+    );
+    const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'compliance-report.pdf';
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    setError('Failed to generate PDF: ' + err.message);
+  }
 };
 
   const handleScan = async () => {
@@ -133,6 +156,7 @@ const removeFile = (index) => {
               <div><strong>{data.compliance.summary.fontViolations}</strong> font too small</div>
               <div><strong>{data.compliance.summary.warnings}</strong> need review</div>
             </div>
+            <button onClick={handleDownloadPdf} className="pdf-button">Download PDF Report</button>
           </section>
 
           <section className="results-panel">

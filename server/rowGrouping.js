@@ -1,3 +1,17 @@
+const NON_PROPAGATING_PATTERNS = [
+  /see\s*below/i,
+  /seal\s*area/i,
+  /for\s*net\s*weight/i,
+  /use\s*by\s*&?\s*batch\s*no/i,
+];
+
+function shouldExcludeFromPropagation(text) {
+  const digitsOnly = (text || '').replace(/[^\d]/g, '');
+  const isBarcodeLike = digitsOnly.length >= 8 && digitsOnly.length / (text || ' ').length > 0.6;
+  const isReferenceText = NON_PROPAGATING_PATTERNS.some((p) => p.test(text || ''));
+  return isBarcodeLike || isReferenceText;
+}
+
 function verticalOverlap(boxA, boxB) {
   const [_, aY1, __, aY2] = boxA.bbox;
   const [___, bY1, ____, bY2] = boxB.bbox;
@@ -14,17 +28,26 @@ function verticalOverlap(boxA, boxB) {
   return overlap / smallerHeight; // fraction of the shorter box that overlaps
 }
 
-function groupIntoRows(blocks, overlapThreshold = 0.4) {
+function horizontalGap(boxA, boxB) {
+  // distance between the nearest edges of the two boxes; 0 if they overlap horizontally
+  if (boxA[2] < boxB[0]) return boxB[0] - boxA[2];
+  if (boxB[2] < boxA[0]) return boxA[0] - boxB[2];
+  return 0;
+}
+
+function groupIntoRows(blocks, overlapThreshold = 0.4, maxHorizontalGapPx = 120) {
   const rows = [];
 
   for (const block of blocks) {
     let placedInRow = null;
 
     for (const row of rows) {
-      const overlapsWithRow = row.blocks.some(
-        (b) => verticalOverlap(b, block) >= overlapThreshold
-      );
-      if (overlapsWithRow) {
+      const fitsRow = row.blocks.some((b) => {
+        const vOverlap = verticalOverlap(b, block) >= overlapThreshold;
+        const hGap = horizontalGap(b.bbox, block.bbox) <= maxHorizontalGapPx;
+        return vOverlap && hGap;
+      });
+      if (fitsRow) {
         placedInRow = row;
         break;
       }
@@ -49,7 +72,7 @@ function propagateRowClassification(blocks) {
     );
     if (known) {
       for (const b of row.blocks) {
-        if (b.matched_declaration_hint === 'unclassified') {
+          if (b.matched_declaration_hint === 'unclassified' && !shouldExcludeFromPropagation(b.text)) {
           b.matched_declaration_hint = known.matched_declaration_hint;
           b.match_confidence = known.match_confidence;
           b.inferred_from_position = true;
@@ -95,7 +118,7 @@ function propagateVerticalContinuation(blocks, opts = {}) {
       continue;
     }
 
-    if (active && block.matched_declaration_hint === 'unclassified') {
+        if (active && block.matched_declaration_hint === 'unclassified' && !shouldExcludeFromPropagation(block.text)){
       const verticalGap = block.bbox[1] - active.bbox[3];
       const hOverlap = horizontalOverlapFraction(active.bbox, block.bbox);
 
