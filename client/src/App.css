@@ -283,3 +283,24 @@ body {
   color: var(--ink);
   font-weight: 500;
 }
+
+@media (max-width: 600px) {
+  .page {
+    padding: 1.2rem 1rem 3rem;
+  }
+  .upload-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .summary-panel {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  .results-table {
+    font-size: 0.8rem;
+  }
+  .results-table th, .results-table td {
+    padding: 0.5rem 0.6rem;
+  }
+}
