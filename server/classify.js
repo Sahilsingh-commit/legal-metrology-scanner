@@ -15,16 +15,17 @@ const UNIT_KEYWORDS = {
 };
 
 const PHRASE_KEYWORDS = {
-  net_quantity: ['net wt', 'net weight', 'net qty', 'net quantity'],
+  net_quantity: ['net wt', 'net weight', 'net qty', 'net quantity', 'QTY'],
   mrp: ['mrp', 'rs.', 'inclusive of all taxes', 'inclusiveofalltaxes', 'incl of all taxes', 'maximum retail price', 'max retail price'],
-  mfg_date: ['mfg date', 'manufactured on', 'pkd', 'packed on', 'date of manufacture', 'mfd', 'month & year of manufactur'],
+  mfg_date: ['mfg date', 'manufactured on', 'pkd', 'packed on', 'date of manufacture', 'mfd', 'month & year of manufactur', 'MONTH & YEAR'],
   manufacturer_address: ['manufactured by', 'manufactured & marketed by', 'marketed by', 'packed by', 'mfd by', 'address'],
-    consumer_care: ['consumer care', 'customer care', 'helpline', 'contact us', 'for consumer complaints', 'toll-free', 'toll free', 'contact:'],
+  consumer_care: ['consumer care', 'customer care', 'helpline', 'contact us', 'for consumer complaints', 'toll-free', 'toll free', 'contact:'],
   batch_no: ['batch no', 'lot no', 'b.no', 'batch:'],
   expiry_date: ['expiry date', 'exp date', 'use before', 'best before', 'use by'],
   generic_name: ['generic name', 'common name', 'composition', 'each tablet contains', 'each uncoated tablet contains', 'each capsule contains'],
   product_name: ['item name', 'product name', 'brand name'],
   item_code: ['item code', 'model no', 'model number', 'sku'],
+  country_of_origin: ['country of origin', 'made in', 'product of', 'origin:', 'imported from', 'manufactured in'],
 };
 
 function normalizeText(text) {

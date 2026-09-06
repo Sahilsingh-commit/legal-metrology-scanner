@@ -55,6 +55,7 @@ app.post('/api/scan', upload.array('images', 5), async (req, res) => {
 
         const metadata = await sharp(resizedBuffer).metadata();
         const imageHeightPx = metadata.height;
+        const imageWidthPx = metadata.width;
 
         const enrichedBlocks = rawBlocks.map((block) => {
           const classification = classifyDeclaration(block.text);
@@ -69,8 +70,8 @@ app.post('/api/scan', upload.array('images', 5), async (req, res) => {
 
         // Row-grouping happens PER IMAGE — a value should only inherit a
         // category from a label on the SAME physical panel, not a different one.
-        const rowGroupedBlocks = propagateRowClassification(enrichedBlocks);
-
+                
+        const rowGroupedBlocks = propagateRowClassification(enrichedBlocks, imageWidthPx);
         // Vertical continuation (multi-line addresses, composition lists, etc.)
         // also runs PER IMAGE, right after row-grouping.
         const finalBlocksForImage = propagateVerticalContinuation(rowGroupedBlocks);
@@ -106,18 +107,20 @@ app.post('/api/scan', upload.array('images', 5), async (req, res) => {
     console.error(err.message);
     res.status(500).json({ error: 'OCR service unreachable', detail: err.message });
   }
-  app.post('/api/report/pdf', express.json({ limit: '5mb' }), (req, res) => {
+  
+});
+
+app.post('/api/report/pdf', express.json({ limit: '20mb' }), (req, res) => {
   try {
-    const { compliance, meta } = req.body;
+    const { compliance, meta, images } = req.body;
     if (!compliance) {
       return res.status(400).json({ error: 'Missing compliance data' });
     }
-    generateReportPdf(compliance, meta || {}, res);
+    generateReportPdf(compliance, meta || {}, images || [], res);
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: 'Failed to generate PDF', detail: err.message });
   }
-});
 });
 
 app.get('/', (req, res) => {

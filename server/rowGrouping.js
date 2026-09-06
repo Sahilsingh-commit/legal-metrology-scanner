@@ -35,7 +35,7 @@ function horizontalGap(boxA, boxB) {
   return 0;
 }
 
-function groupIntoRows(blocks, overlapThreshold = 0.4, maxHorizontalGapPx = 120) {
+function groupIntoRows(blocks, overlapThreshold = 0.4, maxHorizontalGapPx = 150) {
   const rows = [];
 
   for (const block of blocks) {
@@ -63,8 +63,9 @@ function groupIntoRows(blocks, overlapThreshold = 0.4, maxHorizontalGapPx = 120)
   return rows;
 }
 
-function propagateRowClassification(blocks) {
-  const rows = groupIntoRows(blocks);
+function propagateRowClassification(blocks, imageWidthPx) {
+  const maxHorizontalGapPx = imageWidthPx ? imageWidthPx * 0.3 : 150;
+  const rows = groupIntoRows(blocks, 0.3, maxHorizontalGapPx);
 
   for (const row of rows) {
     const known = row.blocks.find(

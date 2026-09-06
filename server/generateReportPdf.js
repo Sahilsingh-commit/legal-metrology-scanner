@@ -27,7 +27,7 @@ const SEVERITY_LABELS = {
  * @param {object} meta - { productName, scannedAt, imageCount }
  * @param {import('express').Response} res
  */
-function generateReportPdf(complianceResult, meta, res) {
+function generateReportPdf(complianceResult,meta, images, res) {
   const doc = new PDFDocument({ margin: 50, size: 'A4' });
 
   res.setHeader('Content-Type', 'application/pdf');
@@ -38,22 +38,65 @@ function generateReportPdf(complianceResult, meta, res) {
   doc.pipe(res);
 
   // ---- Header ----
+
+    // ---- Photo evidence thumbnails, top-right corner ----
+  const imageCount = Math.min(images?.length || 0, 4);
+  const thumbSize = imageCount <= 2 ? 90 : 55;
+  const thumbGap = 6;
+  const pageRightEdge = doc.page.width - doc.page.margins.right;
+  const thumbStartX = imageCount === 1 ? pageRightEdge - thumbSize : pageRightEdge - (thumbSize * 2 + thumbGap);
+  const thumbStartY = doc.y;
+
+  if (images && images.length > 0) {
+    images.slice(0, 4).forEach((imgDataUrl, i) => {
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const x = thumbStartX + col * (thumbSize + thumbGap);
+      const y = thumbStartY + row * (thumbSize + thumbGap);
+      try {
+        doc.image(imgDataUrl, x, y, { fit: [thumbSize, thumbSize] });
+      } catch (e) {
+        console.error('Failed to embed thumbnail', i, e.message);
+      }
+    });
+  }
+
+  // ---- Header text (narrower width, leaves room for thumbnails on the right) ----
+  const headerTextWidth = thumbStartX - doc.page.margins.left - 15;
+
+  const reportId = `LMS-${Date.now().toString(36).toUpperCase()}`;
+  doc.fontSize(10).fillColor(COLORS.textMuted).font('Helvetica')
+    .text(`Report ID: ${reportId}`, doc.page.margins.left, thumbStartY, { width: headerTextWidth });
+
   doc
     .fillColor(COLORS.ink)
     .fontSize(20)
     .font('Helvetica-Bold')
-    .text('Legal Metrology Compliance Report', { align: 'left' });
+    .text('Legal Metrology Compliance Report', doc.page.margins.left, doc.y, { width: headerTextWidth });
 
   doc
     .fontSize(10)
     .fillColor(COLORS.textMuted)
     .font('Helvetica')
-    .text(`Generated ${new Date(meta.scannedAt || Date.now()).toLocaleString('en-IN')}`);
+    .text(`Generated ${new Date(meta.scannedAt || Date.now()).toLocaleString('en-IN')}`, { width: headerTextWidth });
 
   if (meta.productName) {
-    doc.text(`Product: ${meta.productName}`);
+    doc.text(`Product: ${meta.productName}`, { width: headerTextWidth });
   }
-  doc.text(`Photos scanned: ${meta.imageCount || 1}`);
+  doc.text(`Photos scanned: ${meta.imageCount || 1}`, { width: headerTextWidth });
+
+  if (meta.location) {
+    doc.text(`Scan location: ${meta.location}`, { continued: true, width: headerTextWidth });
+    doc.fillColor('#2E4270').text('  (View on map)', {
+      link: `https://www.google.com/maps?q=${meta.location}`,
+      underline: true,
+    });
+    doc.fillColor(COLORS.textMuted);
+  }
+
+  // Make sure we're below both the text block AND the thumbnail grid before continuing
+  const thumbnailGridBottom = thumbStartY + (Math.ceil(Math.min(images?.length || 0, 4) / 2) * (thumbSize + thumbGap));
+  doc.y = Math.max(doc.y, thumbnailGridBottom) + 10;
 
   doc.moveDown(1);
   doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor(COLORS.border).stroke();
@@ -122,7 +165,7 @@ function generateReportPdf(complianceResult, meta, res) {
     doc.moveDown(1);
   }
 
-  // ---- Passed section ----
+    // ---- Passed section ----
   const passed = complianceResult.results.filter((r) => r.severity === 'PASS');
   if (passed.length > 0) {
     doc
@@ -133,7 +176,6 @@ function generateReportPdf(complianceResult, meta, res) {
     doc.moveDown(0.5);
     passed.forEach((p) => renderResultRow(doc, p));
   }
-
   // ---- Footer disclaimer ----
   doc.moveDown(2);
   doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor(COLORS.border).stroke();

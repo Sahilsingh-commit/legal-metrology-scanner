@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
 
@@ -24,6 +24,17 @@ function App() {
   e.target.value = ''; // reset so choosing the same file again still fires onChange
 };
 
+ const [location, setLocation] = useState(null);
+
+useEffect(() => {
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => setLocation(null) // fails silently if denied — don't block the app
+    );
+  }
+}, []);
+
 
 const removeFile = (index) => {
   const updatedFiles = files.filter((_, i) => i !== index);
@@ -34,11 +45,24 @@ const removeFile = (index) => {
 const handleDownloadPdf = async () => {
   if (!data) return;
   try {
+    const imageBase64s = await Promise.all(
+      files.map((f) => new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.readAsDataURL(f);
+      }))
+    );
+
     const response = await axios.post(
       'http://localhost:5000/api/report/pdf',
       {
         compliance: data.compliance,
-        meta: { scannedAt: new Date().toISOString(), imageCount: files.length },
+        meta: {
+          scannedAt: new Date().toISOString(),
+          imageCount: files.length,
+          location: location ? `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}` : 'Not available',
+        },
+        images: imageBase64s,
       },
       { responseType: 'blob' }
     );
